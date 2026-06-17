@@ -265,7 +265,8 @@ create trigger trigger_proteksi_rak_gudang
 before update of lokasi_rak on gudang_stok
 for each row execute function fungsi_validasi_tata_letak_rak();
 
--- [materi 9: stored procedure & transaction management - anti conflict run]
+--WEHHH C# NGELEGGG BOSS
+-- anuu le, C# iki leg weh, butuh koyok dikasih waktu ngupdatenya iku le, biar gak lag.
 create or replace procedure sp_jalankan_transaksi_giling_secure(
     p_id_panen int,
     p_id_mesin varchar,
@@ -279,15 +280,15 @@ language plpgsql as $$
 declare
     v_id_proses int;
 begin
-    -- mengunci batas toleransi antrean kunci data maksimal 3 detik agar c# tidak freeze
+    -- antri 3 detik iki yo le, cukup la 3 detik biar C#nya iku gak crash
     set local lock_timeout = '3000';
 
-    -- 1. catat kepala data ke proses_pabrik
+    -- nyatet kepala data
     insert into proses_pabrik (id_panen, id_mesin, metode_olah, berat_input_panen_kg)
     values (p_id_panen, p_id_mesin, p_metode_olah, p_berat_in)
     returning id_proses into v_id_proses;
     
-    -- 2. catat data detail grade (otomatis memicu penambahan stok via trigger 1)
+    -- nyatet ditel gred beb (otomatis micu penambahan stok via trigger 1)
     insert into detail_proses_grade (id_proses, id_stok_gudang, grade_kualitas, berat_output_green_bean_kg)
     values (v_id_proses, p_id_stok_gudang, p_grade, p_berat_out);
     
@@ -297,7 +298,7 @@ exception
 end;
 $$;
 
--- [materi 8: user defined function]
+-- convertnya lewat sql ae le, kalo lewat C# ngeleg
 create or replace function hitung_konversi_ke_kuintal(berat_kg numeric)
 returns numeric as $$
 begin
@@ -305,7 +306,7 @@ begin
 end;
 $$ language plpgsql;
 
--- [materi 7: view (tabel virtual)]
+-- yo buatin ini lupa cik, seng materi view, buat anu ae, koyok ngeliat stok gudang redy or no :v
 create or replace view v_stok_gudang_ready as
 select id_stok_gudang, jenis_kopi, grade_kualitas, total_karung_tersedia, lokasi_rak
 from gudang_stok;
