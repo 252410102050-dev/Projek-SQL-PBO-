@@ -1,10 +1,4 @@
--- =======================================================================
--- 🚀 siperkop v5.3 - production database integrity file (final revision)
--- =======================================================================
-
--- =========================================
--- langkah 1: drop tabel lama (aman)
--- =========================================
+-- drop tabel lama (aman)
 drop table if exists detail_penjualan cascade;
 drop table if exists penjualan_gudang cascade;
 drop table if exists detail_proses_grade cascade;
@@ -21,9 +15,7 @@ drop table if exists mesin_pabrik cascade;
 drop table if exists pabrik cascade;
 drop table if exists mitra_pembeli cascade;
 
--- =========================================
--- langkah 2: create data definition (tables)
--- =========================================
+-- create data definition (tables)
 
 create table mitra_pembeli (
     id_mitra varchar(50) primary key,
@@ -153,16 +145,12 @@ create table audit_log_sistem (
     waktu_kejadian timestamp default current_timestamp
 );
 
--- =========================================
--- langkah 3: create indexes
--- =========================================
+-- create indexes
 create index idx_proses_pabrik_id_panen on proses_pabrik(id_panen);
 create index idx_detail_proses_id_proses on detail_proses_grade(id_proses);
 create index idx_detail_penjualan_id_penjualan on detail_penjualan(id_penjualan);
 
--- =========================================
--- langkah 4: create triggers & functions
--- =========================================
+-- create triggers & functions
 
 -- trigger 1: tambah stok pabrik
 create or replace function fungsi_tambah_stok_gudang()
@@ -466,9 +454,7 @@ before update of tanggal_proses on proses_pabrik
 for each row execute function fungsi_proteksi_tanggal_proses();
 
 
--- =========================================
--- langkah 5: create stored procedure
--- =========================================
+-- create stored procedure
 
 create or replace procedure sp_jalankan_transaksi_giling_secure(
     p_id_panen int,
@@ -534,9 +520,7 @@ begin
 end;
 $$;
 
--- =========================================
--- langkah 6: create scalar functions
--- =========================================
+-- create scalar functions
 create or replace function hitung_konversi_ke_kuintal(berat_kg numeric)
 returns numeric as $$
 begin
@@ -544,9 +528,7 @@ begin
 end;
 $$ language plpgsql;
 
--- =========================================
--- langkah 7: create views
--- =========================================
+-- create views
 create or replace view v_stok_gudang_ready as
 select id_stok_gudang, jenis_kopi, grade_kualitas, total_berat_kg, total_karung_tersedia, lokasi_rak
 from gudang_stok;
@@ -565,9 +547,7 @@ join penjualan_gudang pg on dp.id_penjualan = pg.id_penjualan
 left join gudang_stok gs on dp.id_stok_gudang = gs.id_stok_gudang
 left join mitra_pembeli mb on pg.id_mitra = mb.id_mitra;
 
--- =========================================
--- langkah 8: insert seed data (production-ready)
--- =========================================
+-- insert seed data (production-ready)
 insert into role_app (nama_role) values ('admin'), ('sinder'), ('mandor');
 
 insert into karyawan values
