@@ -1,4 +1,10 @@
--- ngapuss database sek le
+-- =======================================================================
+-- 🚀 siperkop v5.3 - production database integrity file (final revision)
+-- =======================================================================
+
+-- =========================================
+-- langkah 1: drop tabel lama (aman)
+-- =========================================
 drop table if exists detail_penjualan cascade;
 drop table if exists penjualan_gudang cascade;
 drop table if exists detail_proses_grade cascade;
@@ -15,7 +21,10 @@ drop table if exists mesin_pabrik cascade;
 drop table if exists pabrik cascade;
 drop table if exists mitra_pembeli cascade;
 
--- iki buat data masternya woy
+-- =========================================
+-- langkah 2: create data definition (tables)
+-- =========================================
+
 create table mitra_pembeli (
     id_mitra varchar(50) primary key,
     nama_perusahaan varchar(150) not null,
@@ -27,15 +36,15 @@ create table pabrik (
     id_pabrik varchar(50) primary key,
     nama_pabrik varchar(100) not null,
     lokasi_pabrik varchar(100) not null,
-    kapasitas_harian_kg numeric(10,2)
+    kapasitas_harian_kg numeric(10,2) check (kapasitas_harian_kg > 0)
 );
 
 create table mesin_pabrik (
     id_mesin varchar(50) primary key,
     id_pabrik varchar(50) references pabrik(id_pabrik) on update cascade on delete cascade,
     nama_mesin varchar(100) not null,
-    kapasitas_kg int not null,
-    status_mesin varchar(50) default 'normal'
+    kapasitas_kg int not null check (kapasitas_kg > 0),
+    status_mesin varchar(50) default 'normal' check (status_mesin in ('normal', 'rusak', 'maintenance'))
 );
 
 create table role_app (
@@ -54,12 +63,13 @@ create table user_app (
     id_user serial primary key,
     id_karyawan varchar(100) unique references karyawan(id_karyawan) on update cascade on delete cascade,
     username varchar(50) unique not null,
-    password_hash varchar(64) not null,
+    password_hash varchar(255) not null,
     id_role int references role_app(id_role) on update cascade on delete set null,
     status_verif2step boolean default false not null,
     kode_hash_verif2step varchar(200) default null,
-    salah_password_count int default 0,
-    status_akun varchar(20) default 'aktif',
+    salah_password_count int not null default 0 check (salah_password_count >= 0),
+    status_akun varchar(20) not null default 'aktif' check (status_akun in ('aktif', 'terblokir')),
+    last_login timestamp default null, 
     created_at timestamp default current_timestamp
 );
 
@@ -71,36 +81,37 @@ create table afdeling (
 
 create table blok_lahan (
     id_blok varchar(50) primary key,
-    id_afdeling varchar(50) references afdeling(id_afdeling) on update cascade on delete cascade,
+    id_afdeling varchar(50) not null references afdeling(id_afdeling) on update cascade on delete cascade,
     nama_blok varchar(100) not null,
-    luas_hektar numeric(10,2) not null,
-    kondisi_tanaman varchar(100) default 'baik'
+    luas_hektar numeric(10,2) not null check (luas_hektar > 0),
+    kondisi_tanaman varchar(100) default 'baik' check (kondisi_tanaman in ('baik', 'terserang hama', 'perlu perawatan', 'kritis'))
 );
 
--- ikii apa wess, lupa wehhh, kayak e tabel operasional seng iki
 create table panen_kopi (
     id_panen serial primary key,
-    id_blok varchar(50) references blok_lahan(id_blok) on update cascade on delete cascade,
+    id_blok varchar(50) not null references blok_lahan(id_blok) on update cascade on delete cascade,
     id_user_mandor int references user_app(id_user) on update cascade on delete set null,
-    tanggal_panen date default current_date,
-    berat_kopi_kg numeric(10,2) not null,
-    catatan text
+    tanggal_panen date default current_date check (tanggal_panen <= current_date),
+    berat_kopi_kg numeric(10,2) not null check (berat_kopi_kg > 0),
+    catatan text,
+    constraint unique_panen_blok_tanggal unique (id_blok, tanggal_panen)
 );
 
 create table proses_pabrik (
     id_proses serial primary key,
-    id_panen int references panen_kopi(id_panen) on update cascade on delete cascade,
-    id_mesin varchar(50) references mesin_pabrik(id_mesin) on update cascade on delete set null,
-    tanggal_proses date default current_date,
-    metode_olah varchar(50) not null, 
-    berat_input_panen_kg numeric(10,2) not null 
+    id_panen int not null references panen_kopi(id_panen) on update cascade on delete cascade,
+    id_mesin varchar(50) not null references mesin_pabrik(id_mesin) on update cascade on delete restrict,
+    tanggal_proses date default current_date check (tanggal_proses <= current_date),
+    metode_olah varchar(50) not null check (metode_olah in ('full wash', 'natural', 'honey', 'wet hull', 'dry process')),
+    berat_input_panen_kg numeric(10,2) not null check (berat_input_panen_kg > 0)
 );
 
 create table gudang_stok (
     id_stok_gudang serial primary key,
-    jenis_kopi varchar(100) not null,   
-    grade_kualitas varchar(10) not null, 
-    total_karung_tersedia int default 0, 
+    jenis_kopi varchar(100) not null,
+    grade_kualitas varchar(10) not null check (grade_kualitas in ('grade a', 'grade b')),
+    total_berat_kg numeric(12,2) not null default 0.00 check (total_berat_kg >= 0),
+    total_karung_tersedia int not null default 0 check (total_karung_tersedia >= 0),
     lokasi_rak varchar(50) default 'belum diatur',
     last_update timestamp default current_timestamp,
     constraint unique_kopi_grade unique (jenis_kopi, grade_kualitas)
@@ -108,26 +119,30 @@ create table gudang_stok (
 
 create table detail_proses_grade (
     id_detail_proses serial primary key,
-    id_proses int references proses_pabrik(id_proses) on update cascade on delete cascade,
-    id_stok_gudang int references gudang_stok(id_stok_gudang) on update cascade on delete set null, 
-    grade_kualitas varchar(10) not null, 
-    berat_output_green_bean_kg numeric(10,2) not null
+    id_proses int not null references proses_pabrik(id_proses) on update cascade on delete cascade,
+    id_stok_gudang int references gudang_stok(id_stok_gudang) on update cascade on delete set null,
+    grade_kualitas varchar(10) not null check (grade_kualitas in ('grade a', 'grade b')),
+    berat_output_green_bean_kg numeric(10,2) not null check (berat_output_green_bean_kg > 0)
 );
 
 create table penjualan_gudang (
     id_penjualan serial primary key,
     id_mitra varchar(50) references mitra_pembeli(id_mitra) on update cascade on delete set null,
-    tanggal_jual date default current_date,
-    total_bayar_seluruhnya numeric(15,2) default 0.00
+    tanggal_jual date default current_date check (tanggal_jual <= current_date),
+    total_bayar_seluruhnya numeric(15,2) default 0.00 check (total_bayar_seluruhnya >= 0)
 );
 
 create table detail_penjualan (
     id_detail_jual serial primary key,
-    id_penjualan int references penjualan_gudang(id_penjualan) on update cascade on delete cascade,
+    id_penjualan int not null references penjualan_gudang(id_penjualan) on update cascade on delete cascade,
     id_stok_gudang int references gudang_stok(id_stok_gudang) on update cascade on delete set null,
-    jumlah_karung_jual int not null,
-    harga_per_karung numeric(15,2) not null,
-    subtotal_harga numeric(15,2) not null
+    jumlah_karung_jual int not null check (jumlah_karung_jual > 0),
+    harga_per_karung numeric(15,2) not null check (harga_per_karung > 0),
+    subtotal_harga numeric(15,2) not null,
+    constraint check_subtotal check (
+        round(subtotal_harga::numeric, 2) = 
+        round((jumlah_karung_jual::numeric * harga_per_karung)::numeric, 2)
+    )
 );
 
 create table audit_log_sistem (
@@ -138,100 +153,226 @@ create table audit_log_sistem (
     waktu_kejadian timestamp default current_timestamp
 );
 
--- ikii seng sql lanjuttannnya le
+-- =========================================
+-- langkah 3: create indexes
+-- =========================================
+create index idx_proses_pabrik_id_panen on proses_pabrik(id_panen);
+create index idx_detail_proses_id_proses on detail_proses_grade(id_proses);
+create index idx_detail_penjualan_id_penjualan on detail_penjualan(id_penjualan);
 
--- buat otomatis nambah stok karung neng gudang iku coy, misal wes digiling
+-- =========================================
+-- langkah 4: create triggers & functions
+-- =========================================
+
+-- trigger 1: tambah stok pabrik
 create or replace function fungsi_tambah_stok_gudang()
 returns trigger as $$
+declare
+    v_berat_perubahan numeric(12,2) := 0.00;
+    v_target_id int;
 begin
-    update gudang_stok 
-    set total_karung_tersedia = total_karung_tersedia + floor(new.berat_output_green_bean_kg / 50),
-        last_update = current_timestamp
-    where id_stok_gudang = new.id_stok_gudang;
-    return new;
+    if tg_op = 'insert' then
+        v_berat_perubahan := new.berat_output_green_bean_kg;
+        v_target_id := new.id_stok_gudang;
+    elsif tg_op = 'delete' then
+        v_berat_perubahan := -old.berat_output_green_bean_kg;
+        v_target_id := old.id_stok_gudang;
+    elsif tg_op = 'update' then
+        if old.id_stok_gudang is distinct from new.id_stok_gudang then
+            update gudang_stok
+            set total_berat_kg = total_berat_kg - old.berat_output_green_bean_kg,
+                total_karung_tersedia = floor((total_berat_kg - old.berat_output_green_bean_kg) / 50.0)::int,
+                last_update = current_timestamp
+            where id_stok_gudang = old.id_stok_gudang;
+            
+            v_berat_perubahan := new.berat_output_green_bean_kg;
+            v_target_id := new.id_stok_gudang;
+        else
+            v_berat_perubahan := new.berat_output_green_bean_kg - old.berat_output_green_bean_kg;
+            v_target_id := new.id_stok_gudang;
+        end if;
+    end if;
+
+    if v_target_id is not null then
+        update gudang_stok
+        set total_berat_kg = total_berat_kg + v_berat_perubahan,
+            total_karung_tersedia = floor((total_berat_kg + v_berat_perubahan) / 50.0)::int,
+            last_update = current_timestamp
+        where id_stok_gudang = v_target_id;
+    end if;
+
+    return coalesce(new, old);
 end;
 $$ language plpgsql;
 
 create trigger trigger_tambah_stok
-after insert on detail_proses_grade
+after insert or update or delete on detail_proses_grade
 for each row execute function fungsi_tambah_stok_gudang();
 
 
--- iki biar gak balapan le, jadi anu, dikunci ngunu stoknya, biar gak oposeh, seng kondisi balapan ngunu pokok!!
--- ouh anuu le, iku dikunci ngunu sebelum seng kasir nyimpen barang penjualannya ikuu.
+-- trigger 2: validasi stok jual & kunci (race condition fix)
 create or replace function fungsi_validasi_stok_jual_secure()
 returns trigger as $$
 declare
     stok_sekarang int;
+    perubahan_karung int;
 begin
-    select total_karung_tersedia into stok_sekarang 
-    from gudang_stok 
-    where id_stok_gudang = new.id_stok_gudang
-    for update;
-    
-    if stok_sekarang < new.jumlah_karung_jual then
-        raise exception 'gak iso le! gak onok space buat naruh karung lagi le or lagi diubah karo kasir lain le.';
+    if new.id_stok_gudang is null then
+        raise exception 'gak iso le! referensi stok gudang ilang. hubungi admin!';
     end if;
+
+    if tg_op = 'insert' then
+        perubahan_karung := new.jumlah_karung_jual;
+    elsif tg_op = 'update' then
+        perubahan_karung := new.jumlah_karung_jual - old.jumlah_karung_jual;
+    end if;
+
+    if perubahan_karung > 0 then
+        -- explicit lock: kunci baris stok agar tidak ada race condition kasir
+        select total_karung_tersedia into stok_sekarang
+        from gudang_stok
+        where id_stok_gudang = new.id_stok_gudang
+        for update; 
+
+        if stok_sekarang is null then
+            raise exception 'gak iso le! stok gudang id=% tidak ditemukan.', new.id_stok_gudang;
+        end if;
+
+        if stok_sekarang < perubahan_karung then
+            raise exception 'gak iso le! stok id=% sisa % karung, mau ambil % karung. kurang le!',
+                new.id_stok_gudang, stok_sekarang, perubahan_karung;
+        end if;
+    end if;
+
     return new;
 end;
 $$ language plpgsql;
 
 create trigger trigger_cek_stok
-before insert on detail_penjualan
+before insert or update on detail_penjualan
 for each row execute function fungsi_validasi_stok_jual_secure();
 
 
--- ikiii buat langsung ngurangin stok gudang pas dijual iku lee, sama buat ngitung harganya :V, semangatt beb ngerjainnya.
+-- trigger 3: sinkronisasi berat kg + potong karung + hitung total nota
 create or replace function fungsi_potong_stok_dan_hitung_total()
 returns trigger as $$
 begin
-    update gudang_stok 
-    set total_karung_tersedia = total_karung_tersedia - new.jumlah_karung_jual,
-        last_update = current_timestamp
-    where id_stok_gudang = new.id_stok_gudang;
-    
-    update penjualan_gudang
-    set total_bayar_seluruhnya = total_bayar_seluruhnya + new.subtotal_harga
-    where id_penjualan = new.id_penjualan;
-    return new;
+    if tg_op = 'insert' then
+        if new.id_stok_gudang is not null then
+            update gudang_stok
+            set total_berat_kg = total_berat_kg - (new.jumlah_karung_jual * 50.0),
+                total_karung_tersedia = floor((total_berat_kg - (new.jumlah_karung_jual * 50.0)) / 50.0)::int,
+                last_update = current_timestamp
+            where id_stok_gudang = new.id_stok_gudang;
+        end if;
+        
+        update penjualan_gudang
+        set total_bayar_seluruhnya = total_bayar_seluruhnya + new.subtotal_harga
+        where id_penjualan = new.id_penjualan;
+
+    elsif tg_op = 'delete' then
+        if old.id_stok_gudang is not null then
+            update gudang_stok
+            set total_berat_kg = total_berat_kg + (old.jumlah_karung_jual * 50.0),
+                total_karung_tersedia = floor((total_berat_kg + (old.jumlah_karung_jual * 50.0)) / 50.0)::int,
+                last_update = current_timestamp
+            where id_stok_gudang = old.id_stok_gudang;
+        end if;
+
+        update penjualan_gudang
+        set total_bayar_seluruhnya = total_bayar_seluruhnya - old.subtotal_harga
+        where id_penjualan = old.id_penjualan;
+
+    elsif tg_op = 'update' then
+        -- kembalikan stok lama
+        if old.id_stok_gudang is not null then
+            update gudang_stok
+            set total_berat_kg = total_berat_kg + (old.jumlah_karung_jual * 50.0),
+                total_karung_tersedia = floor((total_berat_kg + (old.jumlah_karung_jual * 50.0)) / 50.0)::int
+            where id_stok_gudang = old.id_stok_gudang;
+        end if;
+
+        -- kurangi dengan stok baru
+        if new.id_stok_gudang is not null then
+            update gudang_stok
+            set total_berat_kg = total_berat_kg - (new.jumlah_karung_jual * 50.0),
+                total_karung_tersedia = floor((total_berat_kg - (new.jumlah_karung_jual * 50.0)) / 50.0)::int,
+                last_update = current_timestamp
+            where id_stok_gudang = new.id_stok_gudang;
+        end if;
+
+        -- update nota master
+        update penjualan_gudang
+        set total_bayar_seluruhnya = total_bayar_seluruhnya - old.subtotal_harga + new.subtotal_harga
+        where id_penjualan = new.id_penjualan;
+    end if;
+    return coalesce(new, old);
 end;
 $$ language plpgsql;
 
 create trigger trigger_final_nota
-after insert on detail_penjualan
+after insert or update or delete on detail_penjualan
 for each row execute function fungsi_potong_stok_dan_hitung_total();
 
 
--- anuu le, buatinn fungsi seng otomatis ngeblokir misal salah input password teruss!!
-create or replace function fungsi_auto_blokir_user()
+-- trigger 4: manajemen akun otomatis
+create or replace function fungsi_manajemen_akun()
 returns trigger as $$
+declare
+    v_status_sebelum_blokir varchar(20);
 begin
-    if new.salah_password_count >= 3 then
+    v_status_sebelum_blokir := new.status_akun;
+
+    if new.salah_password_count >= 3 and new.status_akun = 'aktif' then
         new.status_akun := 'terblokir';
-        insert into audit_log_sistem(username_eksekutor, aktivitas, keterangan)
-        values (new.username, 'wes tak blok iku le :)', 'ojhok mekso, iku diblokir otomatis karo sistem, soale wes 3x salah password.');
+        insert into audit_log_sistem (username_eksekutor, aktivitas, keterangan)
+        values (new.username, 'auto-blokir akun',
+            format('akun "%s" otomatis diblokir sistem karena %s kali salah password.', new.username, new.salah_password_count));
+        v_status_sebelum_blokir := 'sudah_dicatat';
     end if;
+
+    if old.status_akun is distinct from new.status_akun and v_status_sebelum_blokir is distinct from 'sudah_dicatat' then
+        insert into audit_log_sistem (username_eksekutor, aktivitas, keterangan)
+        values ('system', 'perubahan status akun',
+            format('akun "%s" status diubah dari "%s" ke "%s"', new.username, old.status_akun, new.status_akun));
+    end if;
+
+    if old.salah_password_count > 0 and new.salah_password_count = 0 then
+        insert into audit_log_sistem (username_eksekutor, aktivitas, keterangan)
+        values ('system', 'reset counter salah password',
+            format('counter salah password akun "%s" di-reset dari %s ke 0', new.username, old.salah_password_count));
+        
+        if new.status_akun = 'terblokir' then
+            new.status_akun := 'aktif';
+            insert into audit_log_sistem (username_eksekutor, aktivitas, keterangan)
+            values ('system', 'perubahan status akun',
+                format('akun "%s" otomatis dibuka (unlock) karena counter di-reset ke 0.', new.username));
+        end if;
+    end if;
+
     return new;
 end;
 $$ language plpgsql;
 
-create trigger trigger_auto_blokir
-before update of salah_password_count on user_app
-for each row execute function fungsi_auto_blokir_user();
+create trigger trigger_manajemen_akun
+before update of status_akun, salah_password_count on user_app
+for each row execute function fungsi_manajemen_akun();
 
 
--- buatinn anti humann error lee, koyok jangan sampe petani iku nginput data ning lahan seng sama hari ini.
+-- trigger 5: cegah input double 
+-- (memberikan pesan kustom "duh gak iso le!" mendahului error constraint sistem)
 create or replace function fungsi_cegah_double_panen()
 returns trigger as $$
 declare
     v_sudah_ada int;
 begin
-    select count(*) into v_sudah_ada 
-    from panen_kopi 
-    where id_blok = new.id_blok and tanggal_panen = current_date;
+    select count(*) into v_sudah_ada
+    from panen_kopi
+    where id_blok = new.id_blok and tanggal_panen = new.tanggal_panen;
 
     if v_sudah_ada > 0 then
-        raise exception 'duh gak iso le! blok lahan ini wes nyatet data panen dino iki. coba make fitur edit if ingin ngubah sikit sikit datane.';
+        raise exception 'duh gak iso le! blok "%" wes ada catatan panen tanggal %. coba pake fitur edit nek ingin ngubah datane.',
+            new.id_blok, new.tanggal_panen;
     end if;
     return new;
 end;
@@ -242,31 +383,93 @@ before insert on panen_kopi
 for each row execute function fungsi_cegah_double_panen();
 
 
--- buattt biar jenis kopinya gak kecampurr coy
+-- trigger 6: proteksi tata letak rak gudang
 create or replace function fungsi_validasi_tata_letak_rak()
 returns trigger as $$
 declare
     v_rak_terpakai int;
 begin
+    if new.lokasi_rak = 'belum diatur' or new.lokasi_rak is null then
+        return new;
+    end if;
+
     select count(*) into v_rak_terpakai
     from gudang_stok
-    where lokasi_rak = new.lokasi_rak 
-      and lokasi_rak != 'belum diatur'
+    where lokasi_rak = new.lokasi_rak
+      and id_stok_gudang != coalesce(new.id_stok_gudang, -1)
       and (jenis_kopi != new.jenis_kopi or grade_kualitas != new.grade_kualitas);
 
     if v_rak_terpakai > 0 then
-        raise exception 'gagallll!!! rak % wes dialokasikan untuk komoditas kopi jenis or grade lain. ojhok dicampur stok barangnya le!', new.lokasi_rak;
+        raise exception 'gagal! rak "%" wes dialokasikan untuk komoditas kopi/grade lain. ojhok dicampur stok barangnya le!', new.lokasi_rak;
     end if;
     return new;
 end;
 $$ language plpgsql;
 
-create trigger trigger_proteksi_rak_gudang
+create trigger trigger_proteksi_rak_insert
+before insert on gudang_stok
+for each row execute function fungsi_validasi_tata_letak_rak();
+
+create trigger trigger_proteksi_rak_update
 before update of lokasi_rak on gudang_stok
 for each row execute function fungsi_validasi_tata_letak_rak();
 
---WEHHH C# NGELEGGG BOSS
--- anuu le, C# iki leg weh, butuh koyok dikasih waktu ngupdatenya iku le, biar gak lag.
+
+-- trigger 7: validasi hukum fisika (output <= input)
+create or replace function fungsi_validasi_fisika_giling()
+returns trigger as $$
+declare
+    v_berat_input numeric;
+    v_total_output_sekarang numeric;
+begin
+    select berat_input_panen_kg into v_berat_input
+    from proses_pabrik
+    where id_proses = new.id_proses;
+
+    if v_berat_input is null then
+        raise exception 'gagal! proses giling id=% tidak ditemukan atau data korup!', new.id_proses;
+    end if;
+
+    select coalesce(sum(berat_output_green_bean_kg), 0) into v_total_output_sekarang
+    from detail_proses_grade
+    where id_proses = new.id_proses
+      and (id_detail_proses != new.id_detail_proses or new.id_detail_proses is null);
+
+    if (v_total_output_sekarang + new.berat_output_green_bean_kg) > v_berat_input then
+        raise exception 'ora masuk akal le! total output green bean (% kg) melebihi berat panen (% kg). cek timbangan!',
+            to_char((v_total_output_sekarang + new.berat_output_green_bean_kg), 'fm999999990.00'),
+            to_char(v_berat_input, 'fm999999990.00');
+    end if;
+
+    return new;
+end;
+$$ language plpgsql;
+
+create trigger trigger_validasi_fisika_giling
+before insert or update on detail_proses_grade
+for each row execute function fungsi_validasi_fisika_giling();
+
+
+-- trigger 8: proteksi riwayat tanggal proses pabrik
+create or replace function fungsi_proteksi_tanggal_proses()
+returns trigger as $$
+begin
+    if old.tanggal_proses is distinct from new.tanggal_proses then
+        raise exception 'gak iso le! tanggal proses giling tidak bisa diubah. hubungi admin nek perlu koreksi!';
+    end if;
+    return new;
+end;
+$$ language plpgsql;
+
+create trigger trigger_proteksi_tanggal_proses
+before update of tanggal_proses on proses_pabrik
+for each row execute function fungsi_proteksi_tanggal_proses();
+
+
+-- =========================================
+-- langkah 5: create stored procedure
+-- =========================================
+
 create or replace procedure sp_jalankan_transaksi_giling_secure(
     p_id_panen int,
     p_id_mesin varchar,
@@ -279,26 +482,61 @@ create or replace procedure sp_jalankan_transaksi_giling_secure(
 language plpgsql as $$
 declare
     v_id_proses int;
+    v_sudah_diproses int;
+    v_status_mesin varchar(50);
+    v_berat_panen numeric;
+    v_stok_exists int;
 begin
-    -- antri 3 detik iki yo le, cukup la 3 detik biar C#nya iku gak crash
-    set local lock_timeout = '3000';
+    set local lock_timeout = '3000ms';
 
-    -- nyatet kepala data
+    if p_metode_olah not in ('full wash', 'natural', 'honey', 'wet hull', 'dry process') then
+        raise exception 'gak iso le! metode olah "%" tidak valid.', p_metode_olah;
+    end if;
+
+    select id_stok_gudang into v_stok_exists from gudang_stok where id_stok_gudang = p_id_stok_gudang for update;
+    if v_stok_exists is null then
+        raise exception 'gak iso le! stok gudang id=% tidak ditemukan.', p_id_stok_gudang;
+    end if;
+
+    select status_mesin into v_status_mesin from mesin_pabrik where id_mesin = p_id_mesin for update;
+    if v_status_mesin is null then
+        raise exception 'gak iso le! mesin "%" tidak ditemukan.', p_id_mesin;
+    end if;
+    if v_status_mesin in ('rusak', 'maintenance') then
+        raise exception 'gak iso le! mesin "%" sedang dalam status "%".', p_id_mesin, v_status_mesin;
+    end if;
+
+    select berat_kopi_kg into v_berat_panen from panen_kopi where id_panen = p_id_panen for update;
+    if v_berat_panen is null then
+        raise exception 'gak iso le! data panen id=% tidak ditemukan.', p_id_panen;
+    end if;
+    if p_berat_in > v_berat_panen then
+        raise exception 'gak iso le! berat input giling (% kg) melebihi berat panen aktual (% kg).',
+            to_char(p_berat_in, 'fm999999990.00'), to_char(v_berat_panen, 'fm999999990.00');
+    end if;
+
+    select count(*) into v_sudah_diproses from proses_pabrik where id_panen = p_id_panen;
+    if v_sudah_diproses > 0 then
+        raise exception 'gak iso le! panen id=% wes pernah diproses giling. ojo double input!', p_id_panen;
+    end if;
+
     insert into proses_pabrik (id_panen, id_mesin, metode_olah, berat_input_panen_kg)
     values (p_id_panen, p_id_mesin, p_metode_olah, p_berat_in)
     returning id_proses into v_id_proses;
-    
-    -- nyatet ditel gred beb (otomatis micu penambahan stok via trigger 1)
+
     insert into detail_proses_grade (id_proses, id_stok_gudang, grade_kualitas, berat_output_green_bean_kg)
     values (v_id_proses, p_id_stok_gudang, p_grade, p_berat_out);
-    
-exception
-    when others then
-        raise exception 'transaksi pabrik digagalkan karo : %', sqlerrm;
+
+    insert into audit_log_sistem (username_eksekutor, aktivitas, keterangan)
+    values ('system', 'grinding process completed',
+        format('panen id=%s diproses giling dengan mesin %s, input=%s kg, output=%s kg, stok id=%s',
+            p_id_panen, p_id_mesin, p_metode_olah, to_char(p_berat_in, 'fm999999990.00'), to_char(p_berat_out, 'fm999999990.00'), p_id_stok_gudang));
 end;
 $$;
 
--- convertnya lewat sql ae le, kalo lewat C# ngeleg
+-- =========================================
+-- langkah 6: create scalar functions
+-- =========================================
 create or replace function hitung_konversi_ke_kuintal(berat_kg numeric)
 returns numeric as $$
 begin
@@ -306,13 +544,15 @@ begin
 end;
 $$ language plpgsql;
 
--- yo buatin ini lupa cik, seng materi view, buat anu ae, koyok ngeliat stok gudang redy or no :v
+-- =========================================
+-- langkah 7: create views
+-- =========================================
 create or replace view v_stok_gudang_ready as
-select id_stok_gudang, jenis_kopi, grade_kualitas, total_karung_tersedia, lokasi_rak
+select id_stok_gudang, jenis_kopi, grade_kualitas, total_berat_kg, total_karung_tersedia, lokasi_rak
 from gudang_stok;
 
 create or replace view v_detail_penjualan_lengkap as
-select 
+select
     pg.id_penjualan,
     mb.nama_perusahaan as nama_pembeli,
     pg.tanggal_jual,
@@ -322,31 +562,50 @@ select
     pg.total_bayar_seluruhnya
 from detail_penjualan dp
 join penjualan_gudang pg on dp.id_penjualan = pg.id_penjualan
-join gudang_stok gs on dp.id_stok_gudang = gs.id_stok_gudang
-join mitra_pembeli mb on pg.id_mitra = mb.id_mitra;
+left join gudang_stok gs on dp.id_stok_gudang = gs.id_stok_gudang
+left join mitra_pembeli mb on pg.id_mitra = mb.id_mitra;
 
--- data dummyynya le ojhok lupa
--- memasukkan data master awal
+-- =========================================
+-- langkah 8: insert seed data (production-ready)
+-- =========================================
 insert into role_app (nama_role) values ('admin'), ('sinder'), ('mandor');
-insert into karyawan values ('kry001', 'ahlul fikri firdaus', 'sinder', '08123'), ('kry002', 'budiono siregar', 'mandor', '0857');
-insert into user_app (id_karyawan, username, password_hash, id_role) values ('kry001', 'sinder_fikri', 'hash1', 2), ('kry002', 'mandor_budi', 'hash2', 3);
-insert into afdeling values ('afd_utara', 'afdeling lereng utara', 1);
-insert into blok_lahan values ('blok_b3', 'afd_utara', 'blok arabika b3', 5.5);
+
+insert into karyawan values
+    ('kry000', 'administrator sistem', 'administrator', '08999'),
+    ('kry001', 'ahlul fikri firdaus', 'sinder', '08123'),
+    ('kry002', 'budiono siregar', 'mandor', '0857');
+
+insert into user_app (id_karyawan, username, password_hash, id_role) values
+    ('kry000', 'admin_system', 'hash0', 1), 
+    ('kry001', 'sinder_fikri', 'hash1', 2), 
+    ('kry002', 'mandor_budi', 'hash2', 3);  
+
+insert into afdeling values ('afd_utara', 'afdeling lereng utara', 2);
+
+insert into blok_lahan values 
+    ('blok_b3', 'afd_utara', 'blok arabika b3', 5.5, 'baik'),
+    ('blok_b4', 'afd_utara', 'blok arabika b4', 4.2, 'baik'),
+    ('blok_b5', 'afd_utara', 'blok arabika b5', 6.8, 'perlu perawatan');
+
 insert into pabrik values ('pabrik_01', 'pabrik sukorambi', 'jember', 5000);
-insert into mesin_pabrik values ('mesin_a', 'pabrik_01', 'mesin huller a', 2000);
-insert into mitra_pembeli values ('mitra_01', 'kapal api', 'jember', '0811');
-insert into gudang_stok (jenis_kopi, grade_kualitas, total_karung_tersedia) values ('arabika full wash', 'grade a', 0), ('arabika full wash', 'grade b', 0);
-insert into panen_kopi (id_blok, id_user_mandor, berat_kopi_kg) values ('blok_b3', 2, 1500.00);
 
--- trik jitu: mengisolasi eksekusi procedure & penjualan kasir agar bisa di-run sekaligus tanpa bentrok sesi!
-do $$
-begin
-    -- menjalankan stored procedure giling pabrik (grade diset 'grade a' huruf kecil)
-    call sp_jalankan_transaksi_giling_secure(1, 'mesin_a', 'arabika full wash', 1, 'grade a', 1500.00, 500.00);
+insert into mesin_pabrik values
+    ('mesin_a', 'pabrik_01', 'mesin huller a', 2000, 'normal'),
+    ('mesin_b', 'pabrik_01', 'mesin huller b', 1500, 'normal'),
+    ('mesin_c', 'pabrik_01', 'mesin huller c', 1000, 'maintenance');
 
-    -- kasir membuat nota penjualan pertama
-    insert into penjualan_gudang (id_mitra) values ('mitra_01');
-    
-    insert into detail_penjualan (id_penjualan, id_stok_gudang, jumlah_karung_jual, harga_per_karung, subtotal_harga) 
-    values (currval('penjualan_gudang_id_penjualan_seq'), 1, 4, 1500000.00, 6000000.00);
-end $$;
+insert into mitra_pembeli values
+    ('mitra_01', 'pt kapal api', 'jember', '0811'),
+    ('mitra_02', 'coffee lab', 'surabaya', '0821'),
+    ('mitra_03', 'kopindo', 'bandung', '0851');
+
+insert into gudang_stok (jenis_kopi, grade_kualitas, total_berat_kg, total_karung_tersedia, lokasi_rak) values
+    ('arabika full wash', 'grade a', 0.00, 0, 'rak-a1'), 
+    ('arabika full wash', 'grade b', 0.00, 0, 'rak-a2'), 
+    ('arabika natural', 'grade a', 0.00, 0, 'rak-b1'),    
+    ('arabika natural', 'grade b', 0.00, 0, 'rak-b2');    
+
+insert into panen_kopi (id_blok, id_user_mandor, berat_kopi_kg) values
+    ('blok_b3', 3, 1500.00), 
+    ('blok_b4', 3, 1200.00), 
+    ('blok_b5', 3, 1800.00);
